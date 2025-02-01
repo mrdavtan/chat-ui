@@ -2,7 +2,14 @@ import {modelDetails, OpenAIModel} from "../models/model";
 import {ChatCompletion, ChatCompletionMessage, ChatCompletionRequest, ChatMessage, ChatMessagePart, Role} from "../models/ChatCompletion";
 import {OPENAI_API_KEY} from "../config";
 import {CustomError} from "./CustomError";
-import {CHAT_COMPLETIONS_ENDPOINT, MODELS_ENDPOINT} from "../constants/apiEndpoints";
+
+import { MessageType } from "../models/ChatCompletion";
+
+const API_BASE_URL = "http://localhost:8000";  // Change to your FastAPI server
+const CHAT_COMPLETIONS_ENDPOINT = `${API_BASE_URL}/v1/chat/completions`;
+const MODELS_ENDPOINT = `${API_BASE_URL}/v1/models`;  // If a model list API exists
+
+
 import {ChatSettings} from "../models/ChatSettings";
 import {CHAT_STREAM_DEBOUNCE_TIME, DEFAULT_MODEL} from "../constants/appConstants";
 import {NotificationService} from '../service/NotificationService';
@@ -63,32 +70,52 @@ export class ChatService {
   }
 
 
-  static async sendMessage(messages: ChatMessage[], modelId: string): Promise<ChatCompletion> {
-    let endpoint = CHAT_COMPLETIONS_ENDPOINT;
-    let headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`
-    };
+  static async sendMessage(messages: ChatMessage[], modelId: string): Promise<ChatMessage> {
+      try {
+          console.log("🛠 Sending chat request to backend...");
+          console.log("Model:", modelId);
+          console.log("Messages:", messages);
 
-    const mappedMessages = await ChatService.mapChatMessagesToCompletionMessages(modelId,messages);
+          const response = await fetch(CHAT_COMPLETIONS_ENDPOINT, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                  model: modelId,
+                  messages: messages.map(msg => ({
+                      role: msg.role,
+                      content: msg.content,
+                  })),
+                  stream: false,
+              }),
+          });
 
-    const requestBody: ChatCompletionRequest = {
-      model: modelId,
-      messages: mappedMessages,
-    };
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify(requestBody),
-    });
+          if (!response.ok) {
+              throw new Error(`❌ Chat API failed: ${response.statusText}`);
+          }
 
-    if (!response.ok) {
-      const err = await response.json();
-      throw new CustomError(err.error.message, err);
-    }
+          const data = await response.json();
+          console.log("✅ API Response Data:", data);
 
-    return await response.json();
+          if (!data.choices || data.choices.length === 0) {
+              throw new Error("❌ No response received from AI model.");
+          }
+
+          const newMessage: ChatMessage = {
+              id: data.id,
+              role: Role.Assistant,
+              content: data.choices[0].message.content,
+              messageType: MessageType.Normal,
+          };
+
+          console.log("📩 Adding message to chat state:", newMessage);
+          return newMessage;
+      } catch (error) {
+          console.error("❌ Error in ChatService.sendMessage:", error);
+          throw error;
+      }
   }
+
+
 
   private static lastCallbackTime: number = 0;
   private static callDeferred: number | null = null;
@@ -114,182 +141,104 @@ export class ChatService {
     };
   }
 
-  static async sendMessageStreamed(chatSettings: ChatSettings, messages: ChatMessage[], callback: (content: string,fileDataRef: FileDataRef[]) => void): Promise<any> {
-    const debouncedCallback = this.debounceCallback(callback);
+
+  static async sendMessageStreamed(
+    chatSettings: ChatSettings,
+    messages: ChatMessage[],
+    callback: (content: string, fileDataRef: FileDataRef[]) => void
+  ): Promise<void> {
     this.abortController = new AbortController();
-    let endpoint = CHAT_COMPLETIONS_ENDPOINT;
-    let headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`
-    };
 
-    const requestBody: ChatCompletionRequest = {
-      model: DEFAULT_MODEL,
-      messages: [],
-      stream: true,
-    };
-
-    if (chatSettings) {
-      const {model, temperature, top_p, seed} = chatSettings;
-      requestBody.model = model ?? requestBody.model;
-      requestBody.temperature = temperature ?? requestBody.temperature;
-      requestBody.top_p = top_p ?? requestBody.top_p;
-      requestBody.seed = seed ?? requestBody.seed;
-    }
-
-    const mappedMessages = await ChatService.mapChatMessagesToCompletionMessages(requestBody.model,messages);
-    requestBody.messages = mappedMessages;
-
-    let response: Response;
     try {
-      response = await fetch(endpoint, {
+      const response = await fetch(CHAT_COMPLETIONS_ENDPOINT, {
         method: "POST",
-        headers: headers,
-        body: JSON.stringify(requestBody),
-        signal: this.abortController.signal
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: chatSettings.model ?? "default-model",
+          messages: messages.map(msg => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          stream: true,  // Ensure FastAPI handles streaming
+        }),
+        signal: this.abortController.signal,
       });
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        NotificationService.handleUnexpectedError(error, 'Stream reading was aborted.');
-      } else if (error instanceof Error) {
-        NotificationService.handleUnexpectedError(error, 'Error reading streamed response.');
-      } else {
-        console.error('An unexpected error occurred');
-      }
-      return;
-    }
 
-    if (!response.ok) {
-      const err = await response.json();
-      throw new CustomError(err.error.message, err);
-    }
+      if (!response.ok) throw new Error(`Failed to start streaming: ${response.statusText}`);
+      if (!response.body) throw new Error("Streaming response body is null.");
 
-    if (this.abortController.signal.aborted) {
-      // todo: propagate to ui?
-      console.log('Stream aborted');
-      return; // Early return if the fetch was aborted
-    }
-
-    if (response.body) {
-      // Read the response as a stream of data
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
 
-      let partialDecodedChunk = undefined;
-      try {
-        while (true) {
-          const streamChunk = await reader.read();
-          const {done, value} = streamChunk;
-          if (done) {
-            break;
-          }
-          let DONE = false;
-          let decodedChunk = decoder.decode(value);
-          if (partialDecodedChunk) {
-            decodedChunk = "data: " + partialDecodedChunk + decodedChunk;
-            partialDecodedChunk = undefined;
-          }
-          const rawData = decodedChunk.split("data: ").filter(Boolean);  // Split on "data: " and remove any empty strings
-          const chunks: CompletionChunk[] = rawData.map((chunk, index) => {
-            partialDecodedChunk = undefined;
-            chunk = chunk.trim();
-            if (chunk.length == 0) {
-              return;
-            }
-            if (chunk === '[DONE]') {
-              DONE = true;
-              return;
-            }
-            let o;
-            try {
-              o = JSON.parse(chunk);
-            } catch (err) {
-              if (index === rawData.length - 1) { // Check if this is the last element
-                partialDecodedChunk = chunk;
-              } else if (err instanceof Error) {
-                console.error(err.message);
-              }
-            }
-            return o;
-          }).filter(Boolean); // Filter out undefined values which may be a result of the [DONE] term check
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-          let accumulatedContet = '';
-          chunks.forEach(chunk => {
-            chunk.choices.forEach(choice => {
-              if (choice.delta && choice.delta.content) {  // Check if delta and content exist
-                const content = choice.delta.content;
-                try {
-                  accumulatedContet += content;
-                } catch (err) {
-                  if (err instanceof Error) {
-                    console.error(err.message);
-                  }
-                  console.log('error in client. continuing...')
-                }
-              } else if (choice?.finish_reason === 'stop') {
-                // done
-              }
-            });
-          });
-          debouncedCallback(accumulatedContet);
+        const chunk = decoder.decode(value);
+        callback(chunk, []);  // Pass the chunk to UI for real-time display
+      }
 
-          if (DONE) {
-            return;
-          }
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          // User aborted the stream, so no need to propagate an error.
-        } else if (error instanceof Error) {
-          NotificationService.handleUnexpectedError(error, 'Error reading streamed response.');
-        } else {
-          console.error('An unexpected error occurred');
-        }
-        return;
+    } catch (error) {
+      if (error instanceof Error) {
+        NotificationService.handleUnexpectedError(error, "Streaming error");
+      } else {
+        console.error("Unknown streaming error:", error);
       }
     }
-  }
 
+  } // ✅ This closing bracket properly ends sendMessageStreamed()
+
+  // Define cancelStream() outside sendMessageStreamed()
   static cancelStream = (): void => {
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
     }
-  }
+  };
 
-  static getModels = (): Promise<OpenAIModel[]> => {
-    return ChatService.fetchModels();
+
+  static async getModels(): Promise<OpenAIModel[]> {
+      try {
+          const response = await fetch(MODELS_ENDPOINT);
+          const data = await response.json();
+
+          return data.data.map((modelName: string) => ({
+              id: modelName,  // ✅ Ensure `id` is a string
+              name: modelName, // ✅ Ensure `name` is a string
+              object: "model",
+              owned_by: "ollama",
+              permission: [],
+              context_window: 4096,
+              knowledge_cutoff: "unknown",
+              image_support: false,
+              preferred: false,
+              deprecated: false
+          })) as OpenAIModel[];
+      } catch (error: any) {
+          console.error("Failed to fetch models:", error.message || error);
+          return [];
+      }
   }
 
   static async getModelById(modelId: string): Promise<OpenAIModel | null> {
-    try {
-      const models = await ChatService.getModels();
+      try {
+          const models = await ChatService.getModels();
 
-      const foundModel = models.find(model => model.id === modelId);
-      if (!foundModel) {
-        throw new CustomError(`Model with ID '${modelId}' not found.`, {
-          code: 'MODEL_NOT_FOUND',
-          status: 404
-        });
+          const foundModel = models.find(model => model.id === modelId);
+
+          if (!foundModel) {
+              console.warn(`⚠️ Model '${modelId}' not found. Available models:`, models.map(m => m.id));
+              return null;  // ✅ Avoid crashing if the model isn't found
+          }
+
+          return foundModel;
+      } catch (error: any) {
+          console.error("Failed to fetch models:", error.message || error);
+          throw new CustomError("Error retrieving models.", {
+              code: "FETCH_MODELS_FAILED",
+              status: (error as any).status || 500
+          });
       }
-
-      return foundModel;
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        console.error('Failed to get models:', error.message);
-        throw new CustomError('Error retrieving models.', {
-          code: 'FETCH_MODELS_FAILED',
-          status: (error as any).status || 500
-        });
-      } else {
-        console.error('Unexpected error type:', error);
-        throw new CustomError('Unknown error occurred.', {
-          code: 'UNKNOWN_ERROR',
-          status: 500
-        });
-      }
-    }
-
   }
 
 

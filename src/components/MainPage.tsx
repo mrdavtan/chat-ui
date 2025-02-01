@@ -59,6 +59,14 @@ const MainPage: React.FC<MainPageProps> = ({className, isSidebarCollapsed, toggl
   const chatSettingsRef = useRef(chatSettings);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
+  const handleNewMessage = (message: ChatMessage) => {
+      console.log("📩 New message received from API:", message);
+      setMessages((prevMessages) => [...prevMessages, message]);  // ✅ Ensure AI message is stored
+  };
+
+
+
+
   useEffect(() => {
     chatSettingsEmitter.on('chatSettingsChanged', chatSettingsListener);
 
@@ -314,33 +322,43 @@ const MainPage: React.FC<MainPageProps> = ({className, isSidebarCollapsed, toggl
     return effectiveSettings;
   }
 
+
   function sendMessage(updatedMessages: ChatMessage[]) {
-    setLoading(true);
-    clearInputArea();
-    let systemPrompt = getFirstValidString(conversation?.systemPrompt, chatSettings?.instructions, userSettings.instructions, OPENAI_DEFAULT_SYSTEM_PROMPT, DEFAULT_INSTRUCTIONS);
-    let messages: ChatMessage[] = [{
-      role: Role.System,
-      content: systemPrompt
-    } as ChatMessage, ...updatedMessages];
+      setLoading(true);
+      clearInputArea();
 
-    let effectiveSettings = getEffectiveChatSettings();
+      let systemPrompt = getFirstValidString(
+          conversation?.systemPrompt,
+          chatSettings?.instructions,
+          userSettings.instructions,
+          OPENAI_DEFAULT_SYSTEM_PROMPT,
+          DEFAULT_INSTRUCTIONS
+      );
 
-    ChatService.sendMessageStreamed(effectiveSettings, messages, handleStreamedResponse)
-      .then((response: ChatCompletion) => {
-        // nop
-      })
-      .catch(err => {
-          if (err instanceof CustomError) {
-            const message: string = err.message;
-            setLoading(false);
-            addMessage(Role.Assistant, MessageType.Error, message, []);
-          } else {
-            NotificationService.handleUnexpectedError(err, 'Failed to send message to openai.');
-          }
-        }
-      ).finally(() => {
-      setLoading(false); // Stop loading here, whether successful or not
-    });
+      let messages: ChatMessage[] = [{
+          role: Role.System,
+          content: systemPrompt
+      } as ChatMessage, ...updatedMessages];
+
+      let effectiveSettings = getEffectiveChatSettings();
+
+      ChatService.sendMessage(messages, effectiveSettings.model ?? DEFAULT_MODEL)
+          .then((responseMessage) => {
+              console.log("✅ Received response message:", responseMessage);
+              handleNewMessage(responseMessage);  // ✅ Ensure message is added to state
+          })
+          .catch(err => {
+              if (err instanceof CustomError) {
+                  const message: string = err.message;
+                  setLoading(false);
+                  addMessage(Role.Assistant, MessageType.Error, message, []);
+              } else {
+                  NotificationService.handleUnexpectedError(err, 'Failed to send message to openai.');
+              }
+          })
+          .finally(() => {
+              setLoading(false); // Stop loading here, whether successful or not
+          });
   }
 
   function handleStreamedResponse(content: string, fileDataRef: FileDataRef[]) {

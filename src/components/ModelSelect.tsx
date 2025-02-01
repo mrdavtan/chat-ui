@@ -111,31 +111,32 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
   useEffect(() => {
   }, []);
 
+
   useEffect(() => {
-    if (externalModels.length > 0) {
-      setModels(externalModels);
-    } else {
-      setLoading(true);
-      ChatService.getModels()
-        .then(data => {
-          setModels(data);
-        })
-        .catch(err => {
-          console.error('Error fetching model list', err);
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [externalModels]);
+      if (models.length > 0) {
+          // ✅ Find a preferred model, or fallback to the first available model
+          const preferredModel = models.find(m => m.preferred) || models[0];
+
+          if (preferredModel) {
+              console.log("✅ Using model:", preferredModel.id);
+              setSelectedOption(getModelOption(preferredModel));
+              onModelSelect?.(preferredModel.id);
+          } else {
+              console.warn("❌ No valid models available.");
+          }
+      }
+  }, [models]);
+
 
   function getModelOption(model: OpenAIModel) {
-    return {
-      value: model.id,
-      label: model.id,
-      info: formatContextWindow(model.context_window),
-      image_support: model.image_support,
-      preferred: model.preferred,
-      deprecated: model.deprecated
-    };
+      return {
+          value: model.id,
+          label: model.id,
+          info: model.context_window ? formatContextWindow(model.context_window) : "?k",
+          image_support: model.image_support ?? false,
+          preferred: model.preferred ?? false,
+          deprecated: model.deprecated ?? false
+      };
   }
 
   useEffect(() => {

@@ -35,7 +35,21 @@ const Chat: React.FC<Props> = ({
   useEffect(() => {
     ChatService.getModels()
         .then(models => {
-          setModels(models);
+          console.log("✅ Received Models from API:", models);
+          setModels(models.map((model) => ({
+              id: model.id,
+              name: model.id,
+              object: "model",
+              owned_by: "ollama",
+              permission: [],
+              context_window: 4096,
+              knowledge_cutoff: "unknown",
+              image_support: false,
+              preferred: false,
+              deprecated: false
+          })));
+
+
         })
         .catch(err => {
           NotificationService.handleUnexpectedError(err, 'Failed to get list of models');
@@ -132,12 +146,21 @@ const Chat: React.FC<Props> = ({
               )}
             </div>
           </div>
-          {chatBlocks.map((block, index) => (
-              <ChatBlock key={`chat-block-${block.id}`}
-                         block={block}
-                         loading={index === chatBlocks.length - 1 && loading}
-                         isLastBlock={index === chatBlocks.length - 1}/>
-          ))}
+
+          {chatBlocks.map((block, index) => {
+              console.log("📩 Rendering Message:", block);  // ✅ Valid JavaScript
+              return (
+                  <ChatBlock key={`chat-block-${block.id}`}
+                      block={block}
+                      loading={index === chatBlocks.length - 1 && loading}
+                      isLastBlock={index === chatBlocks.length - 1}/>
+              );
+          })}
+
+
+
+
+
           <div className="w-full h-24 shrink-0"></div>
         </div>
       </div>

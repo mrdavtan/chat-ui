@@ -83,6 +83,8 @@ const ChatBlock: React.FC<Props> = ({block, loading, isLastBlock}) => {
           <div className="w-full flex">
             <div className="w-[30px] flex flex-col relative items-end mr-4">
               <div className="relative flex h-[30px] w-[30px] p-0 rounded-xs items-center justify-center">
+
+
                 {block.role === 'user' ? (
                     <UserCircleIcon width={24} height={24}/>
                 ) : block.role === 'assistant' ? (
@@ -95,28 +97,36 @@ const ChatBlock: React.FC<Props> = ({block, loading, isLastBlock}) => {
                    style={errorStyles}>
                 <div
                     className="min-h-[20px] flex flex-col items-start gap-4">
-                  {isEdit ? (
-                          <textarea
-                              spellCheck={false}
-                              tabIndex={0}
-                              ref={textareaRef}
-                              style={{height: savedHeight ?? undefined, lineHeight: '1.33', fontSize: '1rem'}}
-                              className="border border-black/10 bg-white dark:border-gray-900/50 dark:bg-gray-700 w-full m-0 p-0 pr-7 pl-2 md:pl-0 resize-none bg-transparent dark:bg-transparent  focus:ring-0 focus-visible:ring-0 outline-hidden shadow-none"
-                              onChange={handleTextChange}
-                              onKeyDown={checkForSpecialKey}
-                              value={editedBlockContent}
-                          ></textarea>
-                      )
-                      : (
-                          <div ref={contentRef}
-                               className="markdown prose w-full break-words dark:prose-invert light">
+
+
+
+                    {isEdit ? (
+                        <textarea
+                            spellCheck={false}
+                            tabIndex={0}
+                            ref={textareaRef}
+                            style={{ height: savedHeight ?? undefined, lineHeight: '1.33', fontSize: '1rem' }}
+                            className="border border-black/10 bg-white dark:border-gray-900/50 dark:bg-gray-700 w-full m-0 p-0 pr-7 pl-2 md:pl-0 resize-none bg-transparent dark:bg-transparent focus:ring-0 focus-visible:ring-0 outline-hidden shadow-none"
+                            onChange={handleTextChange}
+                            onKeyDown={checkForSpecialKey}
+                            value={editedBlockContent}
+                        ></textarea>
+                    ) : (
+                        <div ref={contentRef} className="markdown prose w-full break-words dark:prose-invert light">
                             {block.role === 'user' ? (
-                                <UserContentBlock text={block.content} fileDataRef={(block.fileDataRef) ? block.fileDataRef : []}/>
+                                <>
+                                    {console.log("🧑 Rendering User Message:", block.content)}
+                                    <UserContentBlock text={block.content} fileDataRef={(block.fileDataRef) ? block.fileDataRef : []} />
+                                </>
                             ) : (
-                                <MarkdownBlock markdown={block.content} role={block.role}
-                                               loading={loading}/>
+                                <>
+                                    {console.log("🤖 Rendering Assistant Message:", block.content)}
+                                    <MarkdownBlock markdown={block.content} role={block.role} loading={loading} />
+                                </>
                             )}
-                          </div>)}
+                        </div>
+                    )}
+
 
                 </div>
               </div>
