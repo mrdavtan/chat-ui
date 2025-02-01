@@ -1,4 +1,5 @@
-# SimpleAgent UI - Based on OpenAI React Chat
+# SimpleAgent UI
+## (OpenAI React Chat Fork)
 
 This project is a fork of the fantastic [OpenAI React Chat Web Application](https://github.com/elebitzero/openai-react-chat) created by **elebitzero**. The original project provides a clean, customizable web frontend for the OpenAI Chat API, built with React, Tailwind CSS, and TypeScript.
 
@@ -8,6 +9,7 @@ I’m integrating this UI as part of **SimpleAgent**, a project that explores th
 - Modern web stack: **React**, **Tailwind CSS**, and **TypeScript**
 - Customizable chat interface with multi-model support
 - Designed for seamless integration with OpenAI APIs
+- Integrated with **SimpleAgent**'s FastAPI backend for efficient multi-agent communication and advanced AI workflows
 
 See [FEATURES.md](FEATURES.md) for more details.
 
@@ -30,14 +32,25 @@ git clone https://github.com/yourusername/simpleagent-ui.git
 2. **Configure your API key:**
 Copy `env.json` to `local.env.json` and replace `'your-api-key-here'` with your [OpenAI API Key](https://platform.openai.com/account/api-keys).
 
-3. **Build & Run the web server:**
+3. **Run the FastAPI Backend:**
+Ensure the FastAPI server is running to handle API requests:
+```bash
+uvicorn main:app --reload
+```
+
+4. **Build & Run the web server:**
 ```bash
 npm install
 npm run start
 ```
 
-4. **Access the application:**
+5. **Access the application:**
 Open [http://localhost:3000/](http://localhost:3000/) in your browser.
+
+## 🧩 Integration with FastAPI
+This UI is tightly integrated with another project using FastAPI.
+
+Make sure the FastAPI server is running to enable full functionality.
 
 ## 🤝 Credits
 - Original UI by **elebitzero** - [GitHub Repo](https://github.com/elebitzero/openai-react-chat)
